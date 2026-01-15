@@ -778,6 +778,9 @@ describe 'saml2', ->
         .replace 'NotBefore="2054-03-12T21:35:05.387Z"',
           # mimicking an IdP with a clock 3 seconds ahead of ours
           "NotBefore=\"#{new Date(Date.now()+3000).toISOString()}\""
+        .replace 'NotOnOrAfter="2014-03-12T21:40:05.392Z"',
+          # also update SubjectConfirmationData NotOnOrAfter to be in the future
+          "NotOnOrAfter=\"#{new Date(Date.now()+60000).toISOString()}\""
       saml_response_base64 = Buffer.from(saml_response, 'utf8').toString('base64')
       request_options =
         require_session_index: false
@@ -848,6 +851,65 @@ describe 'saml2', ->
         assert (/SAML Response is no longer valid/.test(err.message)), "Unexpected error message:" + err.message
         done()
 
+    it 'rejects an assertion with a SubjectConfirmationData NotOnOrAfter in the past', (done) ->
+      sp_options =
+        entity_id: 'https://sp.example.com/metadata.xml'
+        private_key: get_test_file('test2.pem')
+        alt_private_keys: get_test_file('test.pem')
+        certificate: get_test_file('test2.crt')
+        alt_certs: get_test_file('test.crt')
+        assert_endpoint: 'https://sp.example.com/assert'
+      idp_options =
+        sso_login_url: 'https://idp.example.com/login'
+        sso_logout_url:  'https://idp.example.com/logout'
+        certificates: [ get_test_file('test.crt'), get_test_file('test2.crt') ]
+      request_options =
+        require_session_index: false
+        ignore_signature: true
+        allow_unencrypted_assertion: true
+        request_body:
+          SAMLResponse: get_test_file("response_audience_no_timing.xml")
+
+      sp = new saml2.ServiceProvider sp_options
+      idp = new saml2.IdentityProvider idp_options
+
+      sp.post_assert idp, request_options, (err, response) ->
+        assert (err instanceof Error), "Did not get expected error."
+        assert (/SAML Subject is no longer valid/.test(err.message)), "Unexpected error message:" + err.message
+        done()
+
+    it 'rejects an assertion with an invalid SubjectConfirmationData NotOnOrAfter date', (done) ->
+      sp_options =
+        entity_id: 'https://sp.example.com/metadata.xml'
+        private_key: get_test_file('test2.pem')
+        alt_private_keys: get_test_file('test.pem')
+        certificate: get_test_file('test2.crt')
+        alt_certs: get_test_file('test.crt')
+        assert_endpoint: 'https://sp.example.com/assert'
+      idp_options =
+        sso_login_url: 'https://idp.example.com/login'
+        sso_logout_url:  'https://idp.example.com/logout'
+        certificates: [ get_test_file('test.crt'), get_test_file('test2.crt') ]
+
+      # Modify test file to have an invalid date (file is base64 encoded, decode first)
+      saml_response_decoded = Buffer.from(get_test_file("response_audience_no_timing.xml"), 'base64').toString('utf8')
+        .replace 'NotOnOrAfter="2014-03-12T21:40:05.392Z"', 'NotOnOrAfter="not-a-valid-date"'
+      saml_response_base64 = Buffer.from(saml_response_decoded, 'utf8').toString('base64')
+      request_options =
+        require_session_index: false
+        ignore_signature: true
+        allow_unencrypted_assertion: true
+        request_body:
+          SAMLResponse: saml_response_base64
+
+      sp = new saml2.ServiceProvider sp_options
+      idp = new saml2.IdentityProvider idp_options
+
+      sp.post_assert idp, request_options, (err, response) ->
+        assert (err instanceof Error), "Did not get expected error."
+        assert (/SAML Subject has invalid NotOnOrAfter date/.test(err.message)), "Unexpected error message:" + err.message
+        done()
+
     context 'when response contains AudienceRestriction', ->
       sp_options = (properties = {}) ->
         _.extend
@@ -866,6 +928,7 @@ describe 'saml2', ->
         _.extend
           require_session_index: false
           ignore_signature: true
+          ignore_timing: true
           allow_unencrypted_assertion: true
           request_body:
             SAMLResponse: get_test_file("response_audience_no_timing.xml")
@@ -940,6 +1003,7 @@ describe 'saml2', ->
       request_options =
         require_session_index: false
         ignore_signature: true
+        ignore_timing: true
         allow_unencrypted_assertion: true
         request_body:
           SAMLResponse: get_test_file("response_no_audience_no_timing.xml")
@@ -1366,6 +1430,7 @@ describe 'saml2', ->
 
       request_options =
         ignore_signature: true
+        ignore_timing: true
         allow_unencrypted_assertion: true
         request_body:
           SAMLResponse: get_test_file("response_without_issuer.xml")
@@ -1386,6 +1451,7 @@ describe 'saml2', ->
 
       request_options =
         ignore_signature: true
+        ignore_timing: true
         allow_unencrypted_assertion: true
         request_body:
           SAMLResponse: get_test_file("response_with_issuer.xml")
@@ -1406,6 +1472,7 @@ describe 'saml2', ->
 
       request_options =
         ignore_signature: true
+        ignore_timing: true
         allow_unencrypted_assertion: true
         request_body:
           SAMLResponse: get_test_file("response_with_issuer.xml")
