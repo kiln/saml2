@@ -496,14 +496,13 @@ parse_authn_response = (saml_response, sp_private_keys, idp_certificates, allow_
           subject_confirmation = subject.getElementsByTagNameNS(XMLNS.SAML, 'SubjectConfirmation')[0]
           if subject_confirmation?
             subject_confirmation_data = subject_confirmation.getElementsByTagNameNS(XMLNS.SAML, 'SubjectConfirmationData')[0]
-            if subject_confirmation_data?
+            if subject_confirmation_data? and subject_confirmation_data.hasAttribute('NotOnOrAfter')
               not_on_or_after = subject_confirmation_data.getAttribute('NotOnOrAfter')
-              if not_on_or_after?
-                not_on_or_after_date = Date.parse(not_on_or_after)
-                if isNaN(not_on_or_after_date)
-                  return cb_wf new SAMLError('SAML Subject has invalid NotOnOrAfter date', {NotOnOrAfter: not_on_or_after})
-                if not_on_or_after_date <= Date.now()
-                  return cb_wf new SAMLError('SAML Subject is no longer valid', {NotOnOrAfter: not_on_or_after})
+              not_on_or_after_date = Date.parse(not_on_or_after)
+              if isNaN(not_on_or_after_date)
+                return cb_wf new SAMLError('SAML Subject has invalid NotOnOrAfter date', {NotOnOrAfter: not_on_or_after})
+              if not_on_or_after_date <= Date.now()
+                return cb_wf new SAMLError('SAML Subject is no longer valid', {NotOnOrAfter: not_on_or_after})
 
       return cb_wf null, decrypted_assertion
     (validated_assertion, cb_wf) ->

@@ -910,6 +910,101 @@ describe 'saml2', ->
         assert (/SAML Subject has invalid NotOnOrAfter date/.test(err.message)), "Unexpected error message:" + err.message
         done()
 
+    it 'accepts an assertion with no SubjectConfirmationData NotOnOrAfter attribute', (done) ->
+      sp_options =
+        entity_id: 'https://sp.example.com/metadata.xml'
+        private_key: get_test_file('test2.pem')
+        alt_private_keys: get_test_file('test.pem')
+        certificate: get_test_file('test2.crt')
+        alt_certs: get_test_file('test.crt')
+        assert_endpoint: 'https://sp.example.com/assert'
+      idp_options =
+        sso_login_url: 'https://idp.example.com/login'
+        sso_logout_url:  'https://idp.example.com/logout'
+        certificates: [ get_test_file('test.crt'), get_test_file('test2.crt') ]
+
+      # Modify test file to remove NotOnOrAfter from SubjectConfirmationData (NotOnOrAfter is optional per SAML spec)
+      saml_response_decoded = Buffer.from(get_test_file("response_audience_no_timing.xml"), 'base64').toString('utf8')
+        .replace /NotOnOrAfter="2014-03-12T21:40:05.392Z" /, ''
+      saml_response_base64 = Buffer.from(saml_response_decoded, 'utf8').toString('base64')
+      request_options =
+        require_session_index: false
+        ignore_signature: true
+        allow_unencrypted_assertion: true
+        request_body:
+          SAMLResponse: saml_response_base64
+
+      sp = new saml2.ServiceProvider sp_options
+      idp = new saml2.IdentityProvider idp_options
+
+      sp.post_assert idp, request_options, (err, response) ->
+        assert !err?, "Got unexpected error: #{err}"
+        done()
+
+    it 'rejects an assertion with an empty SubjectConfirmationData NotOnOrAfter attribute', (done) ->
+      sp_options =
+        entity_id: 'https://sp.example.com/metadata.xml'
+        private_key: get_test_file('test2.pem')
+        alt_private_keys: get_test_file('test.pem')
+        certificate: get_test_file('test2.crt')
+        alt_certs: get_test_file('test.crt')
+        assert_endpoint: 'https://sp.example.com/assert'
+      idp_options =
+        sso_login_url: 'https://idp.example.com/login'
+        sso_logout_url:  'https://idp.example.com/logout'
+        certificates: [ get_test_file('test.crt'), get_test_file('test2.crt') ]
+
+      # Modify test file to have an empty NotOnOrAfter attribute
+      saml_response_decoded = Buffer.from(get_test_file("response_audience_no_timing.xml"), 'base64').toString('utf8')
+        .replace 'NotOnOrAfter="2014-03-12T21:40:05.392Z"', 'NotOnOrAfter=""'
+      saml_response_base64 = Buffer.from(saml_response_decoded, 'utf8').toString('base64')
+      request_options =
+        require_session_index: false
+        ignore_signature: true
+        allow_unencrypted_assertion: true
+        request_body:
+          SAMLResponse: saml_response_base64
+
+      sp = new saml2.ServiceProvider sp_options
+      idp = new saml2.IdentityProvider idp_options
+
+      sp.post_assert idp, request_options, (err, response) ->
+        assert (err instanceof Error), "Did not get expected error."
+        assert (/SAML Subject has invalid NotOnOrAfter date/.test(err.message)), "Unexpected error message:" + err.message
+        done()
+
+    it 'rejects an assertion with a malformed SubjectConfirmationData NotOnOrAfter attribute', (done) ->
+      sp_options =
+        entity_id: 'https://sp.example.com/metadata.xml'
+        private_key: get_test_file('test2.pem')
+        alt_private_keys: get_test_file('test.pem')
+        certificate: get_test_file('test2.crt')
+        alt_certs: get_test_file('test.crt')
+        assert_endpoint: 'https://sp.example.com/assert'
+      idp_options =
+        sso_login_url: 'https://idp.example.com/login'
+        sso_logout_url:  'https://idp.example.com/logout'
+        certificates: [ get_test_file('test.crt'), get_test_file('test2.crt') ]
+
+      # Modify test file to have a malformed NotOnOrAfter attribute
+      saml_response_decoded = Buffer.from(get_test_file("response_audience_no_timing.xml"), 'base64').toString('utf8')
+        .replace 'NotOnOrAfter="2014-03-12T21:40:05.392Z"', 'NotOnOrAfter="2014-99-99T99:99:99.000Z"'
+      saml_response_base64 = Buffer.from(saml_response_decoded, 'utf8').toString('base64')
+      request_options =
+        require_session_index: false
+        ignore_signature: true
+        allow_unencrypted_assertion: true
+        request_body:
+          SAMLResponse: saml_response_base64
+
+      sp = new saml2.ServiceProvider sp_options
+      idp = new saml2.IdentityProvider idp_options
+
+      sp.post_assert idp, request_options, (err, response) ->
+        assert (err instanceof Error), "Did not get expected error."
+        assert (/SAML Subject has invalid NotOnOrAfter date/.test(err.message)), "Unexpected error message:" + err.message
+        done()
+
     context 'when response contains AudienceRestriction', ->
       sp_options = (properties = {}) ->
         _.extend
