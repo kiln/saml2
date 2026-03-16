@@ -198,6 +198,10 @@ describe 'saml2', ->
         result = saml2.check_saml_signature(get_test_file("good_response_twice_signed_dsig_ns_at_top.xml"), get_test_file("test.crt"))
         assert.notEqual null, result
 
+      it 'correctly ignores commented-out digest', ->
+        result = saml2.check_saml_signature(get_test_file("good_assertion_commented_out_digest.xml"), get_test_file("test.crt"))
+        assert.deepEqual result, [get_test_file("good_assertion_signed_data.xml")]
+
     describe 'check_status_success', =>
       it 'accepts a valid success status', =>
         assert saml2.check_status_success(@good_response_dom), "Did not get 'true' for valid response."
@@ -1117,7 +1121,7 @@ describe 'saml2', ->
       sp.create_login_request_url idp, request_options, (err, login_url, id) ->
         assert not err?, "Error creating login URL: #{err}"
         parsed_url = url.parse login_url, true
-        saml_request = new Buffer(parsed_url.query?.SAMLRequest, 'base64')
+        saml_request = Buffer.from(parsed_url.query?.SAMLRequest, 'base64')
         zlib.inflateRaw saml_request, (err, result) ->
           assert.notEqual result.toString('utf8').indexOf("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"), -1
           done()
@@ -1142,7 +1146,7 @@ describe 'saml2', ->
       sp.create_login_request_url idp, request_options, (err, login_url, id) ->
         assert not err?, "Error creating login URL: #{err}"
         parsed_url = url.parse login_url, true
-        saml_request = new Buffer(parsed_url.query?.SAMLRequest, 'base64')
+        saml_request = Buffer.from(parsed_url.query?.SAMLRequest, 'base64')
         zlib.inflateRaw saml_request, (err, result) ->
           assert.notEqual result.toString('utf8').indexOf("urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"), -1
           done()
@@ -1314,7 +1318,7 @@ describe 'saml2', ->
       xml = sp.create_authn_request_xml(idp)
       dom = (new xmldom.DOMParser()).parseFromString xml
       method = dom.getElementsByTagName('SignatureMethod')[0]
-      assert.equal method.attributes[0].value, 'http://www.w3.org/2000/09/xmldsig#rsa-sha1'
+      assert.equal method.attributes[0].value, "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
 
     it 'can create a signed AuthnRequest xml document with sha256 signature', () ->
       sp_options =
