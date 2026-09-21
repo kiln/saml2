@@ -3,6 +3,20 @@ export type ServiceProviderOptions = {
 	private_key: string;
 	certificate: string;
 	assert_endpoint: string;
+	/**
+	 * Additional private keys (PEM format strings) to try, in order, after
+	 * `private_key` when decrypting an encrypted assertion. Useful for
+	 * continuing to accept assertions encrypted to an old certificate during
+	 * a certificate rollover.
+	 */
+	alt_private_keys?: string[];
+	/**
+	 * Additional certificates (PEM format strings) published in the service
+	 * provider metadata (as both signing and encryption certificates)
+	 * alongside `certificate`. Useful for staging a new certificate during a
+	 * certificate rollover.
+	 */
+	alt_certs?: string[];
 };
 
 export type IdentityProviderOptions = {
@@ -22,6 +36,12 @@ export type SAMLUser = {
 
 export type SAMLResponse = {
 	user: SAMLUser;
+	/**
+	 * Index of the service provider private key that decrypted the assertion:
+	 * `0` means `private_key`, `n` means `alt_private_keys[n - 1]`. Undefined
+	 * when the assertion was not encrypted.
+	 */
+	decryption_key_index?: number;
 };
 
 export type SAMLLogoutRequest = {

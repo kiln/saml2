@@ -133,8 +133,11 @@ Example of the SAML assert response returned:
      { name_id: 'nameid',
        session_index: '_abc-3',
        attributes:
-        { 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname': [ 'Test' ] } } }
+        { 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname': [ 'Test' ] } },
+    decryption_key_index: 0 }
   ```
+
+If the assertion in the response was encrypted, the response includes a `decryption_key_index` field reporting which service provider private key decrypted it: `0` means `private_key`, and `n` means `alt_private_keys[n - 1]`. The field is absent when the assertion was not encrypted. During a certificate rollover this can be used to check the expiry of the certificate actually in use, or to detect an IdP that is still encrypting to a superseded certificate.
 
 <a name="post_assert" />
 

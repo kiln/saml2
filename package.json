@@ -11,7 +11,8 @@
   },
   "scripts": {
     "build": "coffee --bare -c -o lib-js lib",
-    "test": "NODE_ENV=test mocha --require coffeescript/register test/*.coffee",
+    "test": "NODE_ENV=test mocha --require coffeescript/register test/*.coffee && npm run test-types",
+    "test-types": "tsc --noEmit --strict test/types.ts",
     "test-cov": "NODE_ENV=test nyc --extension .coffee -r html -r text mocha --require coffeescript/register test/*.coffee",
     "prepare": "npm run build"
   },
@@ -26,7 +27,8 @@
   "devDependencies": {
     "coffeescript": "^1.12.7",
     "mocha": "^9.2.0",
-    "nyc": "^15.1.0"
+    "nyc": "^15.1.0",
+    "typescript": "^5.5.0"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.6",
