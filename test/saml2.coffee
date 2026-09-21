@@ -231,9 +231,17 @@ describe 'saml2', ->
       KEY_2 = get_test_file("test2.pem")
 
       it 'decrypts and extracts an assertion with all availble keys', (done) =>
-        saml2.decrypt_assertion @good_response_dom, [KEY_2, KEY_1], (err, result) ->
+        saml2.decrypt_assertion @good_response_dom, [KEY_2, KEY_1], (err, result, key_index) ->
           assert not err?, "Got error: #{err}"
           assert.equal result, get_test_file("good_response_decrypted.xml")
+          assert.equal key_index, 1
+          done()
+
+      it 'reports the key index when the first key decrypts', (done) =>
+        saml2.decrypt_assertion @good_response_dom, [KEY_1, KEY_2], (err, result, key_index) ->
+          assert not err?, "Got error: #{err}"
+          assert.equal result, get_test_file("good_response_decrypted.xml")
+          assert.equal key_index, 0
           done()
 
       it 'errors if an incorrect key is used', (done) =>
@@ -418,8 +426,59 @@ describe 'saml2', ->
               'http://schemas.xmlsoap.org/claims/Group': [ 'CN=Students,CN=Users,DC=idp,DC=example,DC=com' ]
               'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname': [ 'Student' ]
               'http://schemas.xmlsoap.org/claims/CommonName': [ 'Test Student' ]
+          decryption_key_index: 1
 
         assert.deepEqual response, expected_response
+        done()
+
+    it 'reports decryption_key_index 0 when the primary key decrypts the assertion', (done) ->
+      sp_options =
+        entity_id: 'https://sp.example.com/metadata.xml'
+        private_key: get_test_file('test.pem')
+        alt_private_keys: get_test_file('test2.pem')
+        certificate: get_test_file('test.crt')
+        alt_certs: get_test_file('test2.crt')
+        assert_endpoint: 'https://sp.example.com/assert'
+      idp_options =
+        sso_login_url: 'https://idp.example.com/login'
+        sso_logout_url:  'https://idp.example.com/logout'
+        certificates: [ get_test_file('test.crt'), get_test_file('test2.crt') ]
+      request_options =
+        ignore_timing: true
+        request_body:
+          SAMLResponse: get_test_file("post_response.xml")
+
+      sp = new saml2.ServiceProvider sp_options
+      idp = new saml2.IdentityProvider idp_options
+
+      sp.post_assert idp, request_options, (err, response) ->
+        assert not err?, "Got error: #{err}"
+        assert.equal response.decryption_key_index, 0
+        done()
+
+    it 'reports the correct decryption_key_index for each alt private key', (done) ->
+      sp_options =
+        entity_id: 'https://sp.example.com/metadata.xml'
+        private_key: get_test_file('test2.pem')
+        alt_private_keys: [ get_test_file('test2.pem'), get_test_file('test.pem') ]
+        certificate: get_test_file('test2.crt')
+        alt_certs: [ get_test_file('test2.crt'), get_test_file('test.crt') ]
+        assert_endpoint: 'https://sp.example.com/assert'
+      idp_options =
+        sso_login_url: 'https://idp.example.com/login'
+        sso_logout_url:  'https://idp.example.com/logout'
+        certificates: [ get_test_file('test.crt'), get_test_file('test2.crt') ]
+      request_options =
+        ignore_timing: true
+        request_body:
+          SAMLResponse: get_test_file("post_response.xml")
+
+      sp = new saml2.ServiceProvider sp_options
+      idp = new saml2.IdentityProvider idp_options
+
+      sp.post_assert idp, request_options, (err, response) ->
+        assert not err?, "Got error: #{err}"
+        assert.equal response.decryption_key_index, 2
         done()
 
     it 'allows the signature to be embedded outside of the assertion', (done) ->
@@ -457,6 +516,7 @@ describe 'saml2', ->
             attributes:
               'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname': [ 'Test' ]
 
+        assert not ('decryption_key_index' of response), "Expected no decryption_key_index for an unencrypted assertion."
         assert.deepEqual response, expected_response
         done()
 
@@ -1174,6 +1234,7 @@ describe 'saml2', ->
               'http://schemas.xmlsoap.org/claims/Group': [ 'CN=Students,CN=Users,DC=idp,DC=example,DC=com' ]
               'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname': [ 'Student' ]
               'http://schemas.xmlsoap.org/claims/CommonName': [ 'Test Student' ]
+          decryption_key_index: 0
 
         assert.deepEqual response, expected_response
         done()

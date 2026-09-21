@@ -215,7 +215,8 @@ to_error = (err) ->
 # using the @private_keys in the given order.
 #
 # @cb will be called with an error if the decryption fails, or the EncryptedAssertion cannot be
-# found. If successful, it will be called with the decrypted data as a string.
+# found. If successful, it will be called with the decrypted data as a string and the index into
+# @private_keys of the key that successfully decrypted it.
 decrypt_assertion = (dom, private_keys, cb) ->
   # This is needed because xmlenc sometimes throws an exception, and sometimes calls the passed-in
   # callback.
@@ -239,7 +240,7 @@ decrypt_assertion = (dom, private_keys, cb) ->
           return cb_e()
 
         debug "Decryption successful with private key ##{index}."
-        cb null, result
+        cb null, result, index
     , -> cb new Error("Failed to decrypt assertion with provided key(s): #{util.inspect errors}")
   catch err
     cb new Error("Decrypt failed: #{util.inspect err}")
@@ -422,15 +423,20 @@ add_namespaces_to_child_assertions = (xml_string) ->
 
 # Takes a DOM of a saml_response, private keys with which to attempt decryption and the
 # certificate(s) of the identity provider that issued it and will return a user object containing
-# the attributes or an error if keys are incorrect or the response is invalid.
+# the attributes or an error if keys are incorrect or the response is invalid. If the assertion
+# was encrypted, the result also includes decryption_key_index, the index into sp_private_keys of
+# the key that decrypted it.
 parse_authn_response = (saml_response, sp_private_keys, idp_certificates, allow_unencrypted, ignore_signature, require_session_index, ignore_timing, notbefore_skew, sp_audience, idp_entity_id, cb) ->
   user = {}
+  decryption_key_index = null
 
   async.waterfall [
     (cb_wf) ->
       # Decrypt the assertion
-      decrypt_assertion saml_response, sp_private_keys, (err, result) ->
-        return cb_wf null, result unless err?
+      decrypt_assertion saml_response, sp_private_keys, (err, result, key_index) ->
+        unless err?
+          decryption_key_index = key_index
+          return cb_wf null, result
         return cb_wf err, result unless allow_unencrypted and err.message == "Expected 1 EncryptedAssertion; found 0."
         assertion = saml_response.getElementsByTagNameNS(XMLNS.SAML, 'Assertion')
         unless assertion.length is 1
@@ -460,8 +466,10 @@ parse_authn_response = (saml_response, sp_private_keys, idp_certificates, allow_
 
           encryptedAssertion = signed_dom.getElementsByTagNameNS(XMLNS.SAML, 'EncryptedAssertion')
           if encryptedAssertion.length is 1
-            return decrypt_assertion saml_response, sp_private_keys, (err, result) ->
-              return cb_wf null, (new xmldom.DOMParser()).parseFromString(result) unless err?
+            return decrypt_assertion saml_response, sp_private_keys, (err, result, key_index) ->
+              unless err?
+                decryption_key_index = key_index
+                return cb_wf null, (new xmldom.DOMParser()).parseFromString(result)
               return cb_wf err
         return cb_wf new Error("Signed data did not contain a SAML Assertion!")
       return cb_wf new Error("SAML Assertion signature check failed! (checked #{idp_certificates.length} certificate(s))")
@@ -525,7 +533,9 @@ parse_authn_response = (saml_response, sp_private_keys, idp_certificates, allow_
           if issuer[0].textContent != idp_entity_id
             return cb_wf new Error("Issuer in the Assertion in the SAML Response is wrong")
 
-        cb_wf null, { user }
+        result = { user }
+        result.decryption_key_index = decryption_key_index if decryption_key_index?
+        cb_wf null, result
       catch err
         return cb_wf err
   ], cb
