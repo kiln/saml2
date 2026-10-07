@@ -8,8 +8,14 @@ const sp_options: saml2.ServiceProviderOptions = {
 	private_key: "PRIVATE KEY",
 	certificate: "CERTIFICATE",
 	assert_endpoint: "https://sp.example.com/assert",
-	alt_private_keys: ["OLD PRIVATE KEY"],
+	alt_private_keys: ["OLD PRIVATE KEY", { name: "example-2026-07", key: "OLDER PRIVATE KEY" }],
 	alt_certs: ["OLD CERTIFICATE"],
+};
+
+// Keys may be named
+const named_sp_options: saml2.ServiceProviderOptions = {
+	...sp_options,
+	private_key: { name: "example-2026-10", key: "PRIVATE KEY" },
 };
 
 // alt_private_keys and alt_certs are optional
@@ -22,10 +28,16 @@ const minimal_sp_options: saml2.ServiceProviderOptions = {
 
 const bad_sp_options: saml2.ServiceProviderOptions = {
 	...minimal_sp_options,
-	// @ts-expect-error alt_private_keys must be an array of strings
+	// @ts-expect-error alt_private_keys must be an array
 	alt_private_keys: "OLD PRIVATE KEY",
 	// @ts-expect-error alt_certs must be an array of strings
 	alt_certs: "OLD CERTIFICATE",
+};
+
+const bad_named_sp_options: saml2.ServiceProviderOptions = {
+	...minimal_sp_options,
+	// @ts-expect-error a named key needs a string name
+	private_key: { name: 1, key: "PRIVATE KEY" },
 };
 
 const sp = new saml2.ServiceProvider(sp_options);
@@ -38,15 +50,17 @@ const idp = new saml2.IdentityProvider({
 
 sp.post_assert(idp, { request_body: {} }, (_err, saml_response) => {
 	const user: saml2.SAMLUser = saml_response.user;
-	const key_index: number | undefined = saml_response.decryption_key_index;
+	const key_name: string | undefined = saml_response.decryption_key_name;
 
-	// @ts-expect-error decryption_key_index is a number, not a string
-	const not_a_string: string = saml_response.decryption_key_index;
+	// @ts-expect-error decryption_key_name may be undefined
+	const always_a_string: string = saml_response.decryption_key_name;
 
 	void user;
-	void key_index;
-	void not_a_string;
+	void key_name;
+	void always_a_string;
 });
 
 void sp_options;
+void named_sp_options;
 void bad_sp_options;
+void bad_named_sp_options;

@@ -133,6 +133,11 @@ format_pem = (key, type) ->
   return key if (/-----BEGIN [0-9A-Z ]+-----[^-]*-----END [0-9A-Z ]+-----/g.exec(key))?
   return "-----BEGIN #{type.toUpperCase()}-----\n" + key.match(/.{1,64}/g).join("\n") + "\n-----END #{type.toUpperCase()}-----"
 
+# A service provider private key is a PEM string or {name, key}. The name is reported back as
+# decryption_key_name when that key decrypts an assertion.
+private_key_pem = (private_key) -> if typeof private_key is 'string' then private_key else private_key?.key
+private_key_name = (private_key) -> private_key?.name unless typeof private_key is 'string'
+
 # Takes a compressed/base64 enoded @saml_request and @private_key and signs the request using RSA-SHA256. It returns
 # the result as an object containing the query parameters.
 sign_request = (saml_request, private_key, relay_state, response=false) ->
@@ -215,8 +220,8 @@ to_error = (err) ->
 # using the @private_keys in the given order.
 #
 # @cb will be called with an error if the decryption fails, or the EncryptedAssertion cannot be
-# found. If successful, it will be called with the decrypted data as a string and the index into
-# @private_keys of the key that successfully decrypted it.
+# found. If successful, it will be called with the decrypted data as a string and the name of the
+# key that decrypted it (undefined for a key given as a plain PEM string).
 decrypt_assertion = (dom, private_keys, cb) ->
   # This is needed because xmlenc sometimes throws an exception, and sometimes calls the passed-in
   # callback.
@@ -234,13 +239,13 @@ decrypt_assertion = (dom, private_keys, cb) ->
     encrypted_assertion = encrypted_assertion[0].toString()
     errors = []
     async.eachOfSeries private_keys, (private_key, index, cb_e) ->
-      xmlenc.decrypt encrypted_assertion, {key: format_pem(private_key, 'PRIVATE KEY')}, (err, result) ->
+      xmlenc.decrypt encrypted_assertion, {key: format_pem(private_key_pem(private_key), 'PRIVATE KEY')}, (err, result) ->
         if err?
           errors.push new Error("Decrypt failed: #{util.inspect err}") if err?
           return cb_e()
 
         debug "Decryption successful with private key ##{index}."
-        cb null, result, index
+        cb null, result, private_key_name(private_key)
     , -> cb new Error("Failed to decrypt assertion with provided key(s): #{util.inspect errors}")
   catch err
     cb new Error("Decrypt failed: #{util.inspect err}")
@@ -424,18 +429,17 @@ add_namespaces_to_child_assertions = (xml_string) ->
 # Takes a DOM of a saml_response, private keys with which to attempt decryption and the
 # certificate(s) of the identity provider that issued it and will return a user object containing
 # the attributes or an error if keys are incorrect or the response is invalid. If the assertion
-# was encrypted, the result also includes decryption_key_index, the index into sp_private_keys of
-# the key that decrypted it.
+# was encrypted with a named key, the result also includes decryption_key_name.
 parse_authn_response = (saml_response, sp_private_keys, idp_certificates, allow_unencrypted, ignore_signature, require_session_index, ignore_timing, notbefore_skew, sp_audience, idp_entity_id, cb) ->
   user = {}
-  decryption_key_index = null
+  decryption_key_name = null
 
   async.waterfall [
     (cb_wf) ->
       # Decrypt the assertion
-      decrypt_assertion saml_response, sp_private_keys, (err, result, key_index) ->
+      decrypt_assertion saml_response, sp_private_keys, (err, result, key_name) ->
         unless err?
-          decryption_key_index = key_index
+          decryption_key_name = key_name
           return cb_wf null, result
         return cb_wf err, result unless allow_unencrypted and err.message == "Expected 1 EncryptedAssertion; found 0."
         assertion = saml_response.getElementsByTagNameNS(XMLNS.SAML, 'Assertion')
@@ -466,9 +470,9 @@ parse_authn_response = (saml_response, sp_private_keys, idp_certificates, allow_
 
           encryptedAssertion = signed_dom.getElementsByTagNameNS(XMLNS.SAML, 'EncryptedAssertion')
           if encryptedAssertion.length is 1
-            return decrypt_assertion saml_response, sp_private_keys, (err, result, key_index) ->
+            return decrypt_assertion saml_response, sp_private_keys, (err, result, key_name) ->
               unless err?
-                decryption_key_index = key_index
+                decryption_key_name = key_name
                 return cb_wf null, (new xmldom.DOMParser()).parseFromString(result)
               return cb_wf err
         return cb_wf new Error("Signed data did not contain a SAML Assertion!")
@@ -534,7 +538,7 @@ parse_authn_response = (saml_response, sp_private_keys, idp_certificates, allow_
             return cb_wf new Error("Issuer in the Assertion in the SAML Response is wrong")
 
         result = { user }
-        result.decryption_key_index = decryption_key_index if decryption_key_index?
+        result.decryption_key_name = decryption_key_name if decryption_key_name?
         cb_wf null, result
       catch err
         return cb_wf err
@@ -562,17 +566,19 @@ module.exports.ServiceProvider =
   class ServiceProvider
     # Initializes a service provider given the passed options.
     #
-    # @entity_id, @private_key, @assert_endpoint, @certificate, @alt_private_keys, @alt_certs can
+    # @entity_id, @private_key, @private_keys, @assert_endpoint, @certificate, @alt_certs can
     # only be set here and are used by exported functions.
     #
     # Rest of options can be set/overwritten by the identity provider and/or at function call.
     constructor: (options) ->
-      {@entity_id, @private_key, @certificate, @assert_endpoint, @alt_private_keys, @alt_certs} = options
+      {@entity_id, @certificate, @assert_endpoint, @alt_certs} = options
 
       options.audience ?= @entity_id
       options.notbefore_skew ?= 1
 
-      @alt_private_keys = [].concat(@alt_private_keys or [])
+      # Keys tried in order when decrypting; the first also signs requests.
+      @private_keys = [options.private_key].concat(options.alt_private_keys or [])
+      @private_key = private_key_pem(options.private_key)
       @alt_certs = [].concat(@alt_certs or [])
 
       @shared_options = _.pick(options,
@@ -676,7 +682,7 @@ module.exports.ServiceProvider =
 
               parse_authn_response(
                 saml_response,
-                [@private_key].concat(@alt_private_keys),
+                @private_keys,
                 identity_provider.certificates,
                 options.allow_unencrypted_assertion,
                 options.ignore_signature,

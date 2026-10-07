@@ -44,10 +44,10 @@ Represents a service provider that relies on a trusted [`IdentityProvider`](#Ide
 An object that can contain the below options.  All options are strings, unless specified otherwise.  See [note](#note_options) for more information on options.
 
 - `entity_id` - **Required** - Unique identifier for the service provider, often the URL of the metadata file.
-- `private_key` - **Required** - (PEM format string) - Private key for the service provider.
+- `private_key` - **Required** - (PEM format string, or `{ name, key }`) - Private key for the service provider. A named key's `name` is reported as `decryption_key_name` when it decrypts an assertion.
 - `certificate` - **Required** - (PEM format string) - Certificate for the service provider.
 - `assert_endpoint` - **Required** - URL of service provider assert endpoint.
-- `alt_private_keys` - (Array of PEM format strings) - Additional private keys to use when attempting to decrypt responses. Useful for adding backward-compatibility for old certificates after a rollover.
+- `alt_private_keys` - (Array of PEM format strings or `{ name, key }`) - Additional private keys to use when attempting to decrypt responses. Useful for adding backward-compatibility for old certificates after a rollover.
 - `alt_certs` - (Array of PEM format strings) - Additional certificates to expose in the SAML metadata. Useful for staging new certificates for rollovers.
 - `audience` - (String or RegExp) — If set, at least one of the `<Audience>` values within the `<AudienceRestriction>` condition of a SAML authentication response must match. Defaults to `entity_id`.
 - `notbefore_skew` - (Number) – To account for clock skew between IdP and SP, accept responses with a NotBefore condition ahead of the current time (according to our clock) by this number of seconds. Defaults to 1. Set it to 0 for optimum security but no tolerance for clock skew.
@@ -134,10 +134,10 @@ Example of the SAML assert response returned:
        session_index: '_abc-3',
        attributes:
         { 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname': [ 'Test' ] } },
-    decryption_key_index: 0 }
+    decryption_key_name: 'example-2026-10' }
   ```
 
-If the assertion in the response was encrypted, the response includes a `decryption_key_index` field reporting which service provider private key decrypted it: `0` means `private_key`, and `n` means `alt_private_keys[n - 1]`. The field is absent when the assertion was not encrypted. During a certificate rollover this can be used to check the expiry of the certificate actually in use, or to detect an IdP that is still encrypting to a superseded certificate.
+If the assertion was encrypted and the private key that decrypted it was given as `{ name, key }`, the response includes that name as `decryption_key_name`. During a certificate rollover this identifies the key actually in use, for example to check its certificate's expiry or to notice an IdP still encrypting to a superseded certificate.
 
 <a name="post_assert" />
 

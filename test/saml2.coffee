@@ -231,17 +231,18 @@ describe 'saml2', ->
       KEY_2 = get_test_file("test2.pem")
 
       it 'decrypts and extracts an assertion with all availble keys', (done) =>
-        saml2.decrypt_assertion @good_response_dom, [KEY_2, KEY_1], (err, result, key_index) ->
+        saml2.decrypt_assertion @good_response_dom, [KEY_2, KEY_1], (err, result, key_name) ->
           assert not err?, "Got error: #{err}"
           assert.equal result, get_test_file("good_response_decrypted.xml")
-          assert.equal key_index, 1
+          assert.equal key_name, undefined
           done()
 
-      it 'reports the key index when the first key decrypts', (done) =>
-        saml2.decrypt_assertion @good_response_dom, [KEY_1, KEY_2], (err, result, key_index) ->
+      it 'reports the name of a named key that decrypts', (done) =>
+        keys = [ { name: 'two', key: KEY_2 }, { name: 'one', key: KEY_1 } ]
+        saml2.decrypt_assertion @good_response_dom, keys, (err, result, key_name) ->
           assert not err?, "Got error: #{err}"
           assert.equal result, get_test_file("good_response_decrypted.xml")
-          assert.equal key_index, 0
+          assert.equal key_name, 'one'
           done()
 
       it 'errors if an incorrect key is used', (done) =>
@@ -384,8 +385,8 @@ describe 'saml2', ->
     it 'returns a user object when passed a valid AuthnResponse', (done) ->
       sp_options =
         entity_id: 'https://sp.example.com/metadata.xml'
-        private_key: get_test_file('test2.pem')
-        alt_private_keys: get_test_file('test.pem')
+        private_key: { name: 'new', key: get_test_file('test2.pem') }
+        alt_private_keys: [ { name: 'old', key: get_test_file('test.pem') } ]
         certificate: get_test_file('test2.crt')
         alt_certs: get_test_file('test.crt')
         assert_endpoint: 'https://sp.example.com/assert'
@@ -426,15 +427,15 @@ describe 'saml2', ->
               'http://schemas.xmlsoap.org/claims/Group': [ 'CN=Students,CN=Users,DC=idp,DC=example,DC=com' ]
               'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname': [ 'Student' ]
               'http://schemas.xmlsoap.org/claims/CommonName': [ 'Test Student' ]
-          decryption_key_index: 1
+          decryption_key_name: 'old'
 
         assert.deepEqual response, expected_response
         done()
 
-    it 'reports decryption_key_index 0 when the primary key decrypts the assertion', (done) ->
+    it 'reports the primary key\'s name when it decrypts the assertion', (done) ->
       sp_options =
         entity_id: 'https://sp.example.com/metadata.xml'
-        private_key: get_test_file('test.pem')
+        private_key: { name: 'current', key: get_test_file('test.pem') }
         alt_private_keys: get_test_file('test2.pem')
         certificate: get_test_file('test.crt')
         alt_certs: get_test_file('test2.crt')
@@ -453,14 +454,14 @@ describe 'saml2', ->
 
       sp.post_assert idp, request_options, (err, response) ->
         assert not err?, "Got error: #{err}"
-        assert.equal response.decryption_key_index, 0
+        assert.equal response.decryption_key_name, 'current'
         done()
 
-    it 'reports the correct decryption_key_index for each alt private key', (done) ->
+    it 'omits decryption_key_name when the decrypting key has no name', (done) ->
       sp_options =
         entity_id: 'https://sp.example.com/metadata.xml'
         private_key: get_test_file('test2.pem')
-        alt_private_keys: [ get_test_file('test2.pem'), get_test_file('test.pem') ]
+        alt_private_keys: [ { name: 'also-wrong', key: get_test_file('test2.pem') }, get_test_file('test.pem') ]
         certificate: get_test_file('test2.crt')
         alt_certs: [ get_test_file('test2.crt'), get_test_file('test.crt') ]
         assert_endpoint: 'https://sp.example.com/assert'
@@ -478,7 +479,7 @@ describe 'saml2', ->
 
       sp.post_assert idp, request_options, (err, response) ->
         assert not err?, "Got error: #{err}"
-        assert.equal response.decryption_key_index, 2
+        assert not ('decryption_key_name' of response), "Expected no decryption_key_name for an unnamed key."
         done()
 
     it 'allows the signature to be embedded outside of the assertion', (done) ->
@@ -516,7 +517,7 @@ describe 'saml2', ->
             attributes:
               'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname': [ 'Test' ]
 
-        assert not ('decryption_key_index' of response), "Expected no decryption_key_index for an unencrypted assertion."
+        assert not ('decryption_key_name' of response), "Expected no decryption_key_name for an unencrypted assertion."
         assert.deepEqual response, expected_response
         done()
 
@@ -1194,7 +1195,7 @@ describe 'saml2', ->
     it 'returns a user object with passed a valid AuthnResponse', (done) ->
       sp_options =
         entity_id: 'https://sp.example.com/metadata.xml'
-        private_key: get_test_file('test.pem')
+        private_key: { name: 'current', key: get_test_file('test.pem') }
         certificate: get_test_file('test.crt')
         assert_endpoint: 'https://sp.example.com/assert'
       idp_options =
@@ -1234,7 +1235,7 @@ describe 'saml2', ->
               'http://schemas.xmlsoap.org/claims/Group': [ 'CN=Students,CN=Users,DC=idp,DC=example,DC=com' ]
               'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname': [ 'Student' ]
               'http://schemas.xmlsoap.org/claims/CommonName': [ 'Test Student' ]
-          decryption_key_index: 0
+          decryption_key_name: 'current'
 
         assert.deepEqual response, expected_response
         done()

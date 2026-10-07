@@ -1,15 +1,22 @@
+/**
+ * A service provider private key: a PEM string, or a PEM string with a name
+ * that is reported back as `decryption_key_name` when the key decrypts an
+ * assertion.
+ */
+export type PrivateKey = string | { name: string; key: string };
+
 export type ServiceProviderOptions = {
 	entity_id: string;
-	private_key: string;
+	private_key: PrivateKey;
 	certificate: string;
 	assert_endpoint: string;
 	/**
-	 * Additional private keys (PEM format strings) to try, in order, after
-	 * `private_key` when decrypting an encrypted assertion. Useful for
-	 * continuing to accept assertions encrypted to an old certificate during
-	 * a certificate rollover.
+	 * Additional private keys to try, in order, after `private_key` when
+	 * decrypting an encrypted assertion. Useful for continuing to accept
+	 * assertions encrypted to an old certificate during a certificate
+	 * rollover.
 	 */
-	alt_private_keys?: string[];
+	alt_private_keys?: PrivateKey[];
 	/**
 	 * Additional certificates (PEM format strings) published in the service
 	 * provider metadata (as both signing and encryption certificates)
@@ -37,11 +44,10 @@ export type SAMLUser = {
 export type SAMLResponse = {
 	user: SAMLUser;
 	/**
-	 * Index of the service provider private key that decrypted the assertion:
-	 * `0` means `private_key`, `n` means `alt_private_keys[n - 1]`. Undefined
-	 * when the assertion was not encrypted.
+	 * Name of the service provider private key that decrypted the assertion.
+	 * Undefined when the assertion was not encrypted or the key had no name.
 	 */
-	decryption_key_index?: number;
+	decryption_key_name?: string;
 };
 
 export type SAMLLogoutRequest = {
